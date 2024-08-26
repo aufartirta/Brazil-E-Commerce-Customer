@@ -262,17 +262,22 @@ eae0a83dxx|2783.01|2|81	|1391.50|9.01|2783.01
 1da09dd6xx|2164.40|3|245|721.46|4.46|2164.40
 
 Interpreting the Results:
-*  High CLV: Customers with a high estimated_clv are the most valuable. They likely have a high average purchase value, frequent orders, or a long customer lifespan.
-*  Low CLV: Customers with a low estimated_clv contribute less revenue over time. This could be due to infrequent purchases, low average order value, or a short customer lifespan.
-*  Total Orders & Lifespan: By analyzing total_orders and customer_lifespan_days, you can see if high CLV is driven by frequent purchases over a long period or by high-value purchases in a short timeframe.
-*  Revenue Trends: The total_revenue column helps in understanding which customers are contributing the most revenue, while avg_purchase_value shows the consistency in the purchase amounts.
+* High CLV: Customers with a high estimated_clv are the most valuable. They likely have a high average purchase value, frequent orders, or a long customer lifespan.
+* Low CLV: Customers with a low estimated_clv contribute less revenue over time. This could be due to infrequent purchases, low average order value, or a short customer lifespan.
+* Total Orders & Lifespan: By analyzing total_orders and customer_lifespan_days, you can see if high CLV is driven by frequent purchases over a long period or by high-value purchases in a short timeframe.
+* Revenue Trends: The total_revenue column helps in understanding which customers are contributing the most revenue, while avg_purchase_value shows the consistency in the purchase amounts.
 
 Actions Based on Interpretation:
-*  Retention Strategies: For high CLV customers, focus on retention strategies such as loyalty programs, personalized offers, or premium support.
-*  Reactivation Campaigns: For low CLV customers, consider reactivation campaigns to encourage more frequent purchases or higher-value orders.
-*  Segmentation: Use these insights to segment your customers for targeted marketing campaigns, ensuring that high-value customers receive the most attention.
+* Retention Strategies: For high CLV customers, focus on retention strategies such as loyalty programs, personalized offers, or premium support.
+* Reactivation Campaigns: For low CLV customers, consider reactivation campaigns to encourage more frequent purchases or higher-value orders.
+* Segmentation: Use these insights to segment your customers for targeted marketing campaigns, ensuring that high-value customers receive the most attention.
 
 ### 4. RFM (Recency, Frequency, Monetary) Analysis
+RFM Analysis is a customer segmentation technique used to categorize customers based on their purchasing behavior. It is a powerful tool for understanding customer value and prioritizing marketing efforts.
+* Recency: Measures how recently a customer made a purchase. This would indicate the time elapsed since a customer's last order. Customers who have purchased more recently are often considered more engaged.
+* Frequency: Tracks how often a customer makes purchases. This would be the number of orders placed by a customer over a specific period. High-frequency customers are likely more loyal and can be targeted for retention strategies.
+* Monetary: Refers to the total amount a customer has spent. This would be calculated based on the total payment value for each customer. Customers with high monetary values are considered more valuable and may warrant special attention.
+  
 ```sql
 --Recency
 SELECT
@@ -309,8 +314,11 @@ GROUP BY
 	c.customer_unique_id
 ORDER BY monetary DESC;
 ```
+The code above demonstrates the calculation of Recency, Frequency, and Monetary individually. The complete RFM calculation is shown on the code below:
+
 ```sql
---RFM Analysis based on average score
+
+--RFM Analysis
 WITH RFMTable AS (
     SELECT
         c.customer_unique_id,
@@ -326,53 +334,7 @@ WITH RFMTable AS (
 RFMScores AS (
     SELECT
         customer_unique_id,
-        NTILE(5) OVER (ORDER BY recency DESC) AS recency_score,
-        NTILE(5) OVER (ORDER BY frequency) AS frequency_score,
-        NTILE(5) OVER (ORDER BY monetary) AS monetary_score
-    FROM RFMTable
-),
-AverageRFM AS (
-    SELECT
-        customer_unique_id,
-        recency_score,
-        frequency_score,
-        monetary_score,
-        ROUND((recency_score + frequency_score + monetary_score) / 3.0, 2) AS avg_rfm_score,
-		NTILE(4) OVER (ORDER BY ROUND((recency_score + frequency_score + monetary_score) / 3.0, 2) DESC) AS segment -- Segment into 4 groups
-    FROM RFMScores
-)
-SELECT 
-    customer_unique_id,
-    recency_score,
-    frequency_score,
-    monetary_score,
-    avg_rfm_score,
-	CASE 
-        WHEN segment = 1 THEN 'top loyalist'
-        WHEN segment = 2 THEN 'frequent shopper'
-        WHEN segment = 3 THEN 'regular member'
-        WHEN segment = 4 THEN 'customers at risk'
-	END AS segment_name
-FROM AverageRFM;
-```
-```sql
---RFM Analysis based on categorization
-WITH RFMTable AS (
-    SELECT
-        c.customer_unique_id,
-        CURRENT_DATE - MAX(o.order_purchase_timestamp) AS recency,
-        COUNT(op.payment_value) AS frequency,
-        SUM(op.payment_value) AS monetary
-    FROM customers c
-    JOIN orders o ON c.customer_id = o.customer_id
-    JOIN order_payments op ON o.order_id = op.order_id
-    WHERE o.order_status NOT IN ('canceled', 'unavailable')
-    GROUP BY c.customer_unique_id
-),
-RFMScores AS (
-    SELECT
-        customer_unique_id,
-        NTILE(5) OVER (ORDER BY recency DESC) AS recency_score,
+		NTILE(5) OVER (ORDER BY recency) AS recency_score,
         NTILE(5) OVER (ORDER BY frequency) AS frequency_score,
         NTILE(5) OVER (ORDER BY monetary) AS monetary_score
     FROM RFMTable
@@ -385,11 +347,20 @@ SELECT
     CONCAT(recency_score, frequency_score, monetary_score) AS rfm_score,
     CASE
         WHEN recency_score = 5 AND frequency_score >= 4 AND monetary_score >= 4 THEN 'Best Customers'
-        WHEN recency_score = 5 AND frequency_score <= 2 AND monetary_score >= 4 THEN 'Loyal Customers'
-        WHEN recency_score >= 3 AND frequency_score >= 3 AND monetary_score <= 2 THEN 'Potential Loyalists'
+        WHEN recency_score >= 4 AND frequency_score >= 3 AND monetary_score >= 3 THEN 'Loyal Customers'
+        WHEN recency_score <= 3 AND frequency_score >= 3 AND monetary_score >= 3 THEN 'Potential Loyalists'
         WHEN recency_score = 5 AND frequency_score <= 2 AND monetary_score <= 2 THEN 'New Customers'
         ELSE 'At Risk'
     END AS customer_segment
-FROM RFMScores
-ORDER BY customer_segment;
+FROM RFMScores;
 ```
+Result:
+
+In the provided code, customers are scored on each of these three dimensions, and then these scores are combined to create an RFM score. Based on their RFM score, customers are segmented into categories such as "Best Customers," "Loyal Customers," "Potential Loyalists," "New Customers," and "At Risk" customers with explanations as follows:
+Best Customers: Recent, frequent, and high-spending customers.
+Loyal Customers: Frequent buyers with moderate to high spending, but perhaps not as recent.
+Potential Loyalists: Customers who are not recent but have a history of moderate to high spending.
+New Customers: Recent buyers with lower frequency and monetary value.
+At Risk: Customers with low recency, frequency, and monetary scores.
+
+This segmentation allows businesses to tailor their marketing strategies and customer engagement efforts according to the behavior and value of different customer groups.
