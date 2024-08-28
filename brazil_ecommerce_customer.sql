@@ -1,13 +1,28 @@
 --Identify the preferred payment methods
+WITH total_payment AS(
+	SELECT COUNT(*) AS total
+	FROM order_payments
+)
 SELECT
 	payment_type,
 	COUNT(*) AS amount,
+	ROUND((COUNT(*) * 100.0) / (SELECT total FROM total_payment), 2) AS percentage,
 	ROUND(SUM(payment_value::INTEGER), 2) AS total_value
 FROM order_payments
 GROUP BY payment_type
 ORDER BY amount DESC; 
 
----Compare total order value and total payment value. Identify the differences
+--Identify the relation between payment value and payment installments
+SELECT
+	ROUND(SUM(payment_value::INTEGER), 2) AS total_payment_value,
+	ROUND(AVG(payment_value::INTEGER), 2) AS average_payment_value,
+	payment_installments
+FROM order_payments
+GROUP BY
+	payment_installments
+ORDER BY average_payment_value DESC;
+
+--Compare total order value and total payment value. Identify the differences
 WITH OrderValues AS (
     SELECT
         op.order_id,
@@ -141,7 +156,7 @@ clv_calculation AS (
         avg_purchase_value,
         COALESCE(NULLIF(customer_lifespan_days, 0), 1) AS customer_lifespan_days,  -- Handle customers with only one purchase
         -- Calculate purchase frequency per year; handle cases where lifespan is 0
-        COALESCE(total_orders / NULLIF(customer_lifespan_days / 365.0, 0), 1) AS purchase_frequency_per_year,
+        COALESCE(total_orders / NULLIF(GREATEST(customer_lifespan_days / 365.0, 0.1), 1), 1) AS purchase_frequency_per_year,
         (avg_purchase_value * COALESCE(total_orders / NULLIF(customer_lifespan_days / 365.0, 0), 1) * (customer_lifespan_days / 365.0)) AS clv
     FROM
         customer_lifetime
@@ -159,7 +174,7 @@ FROM
 WHERE
     total_orders > 1 
 ORDER BY
-    customer_lifespan_days DESC;
+    estimated_clv DESC;
 
 
 /*Customer Segmentation: RFM (Recency, Frequency, Monetary) Analysis*/
@@ -198,7 +213,7 @@ GROUP BY
 	c.customer_unique_id
 ORDER BY monetary DESC;
 
---RFM Analysis based on average score
+--RFM Analysis
 WITH RFMTable AS (
     SELECT
         c.customer_unique_id,
@@ -214,52 +229,7 @@ WITH RFMTable AS (
 RFMScores AS (
     SELECT
         customer_unique_id,
-        NTILE(5) OVER (ORDER BY recency DESC) AS recency_score,
-        NTILE(5) OVER (ORDER BY frequency) AS frequency_score,
-        NTILE(5) OVER (ORDER BY monetary) AS monetary_score
-    FROM RFMTable
-),
-AverageRFM AS (
-    SELECT
-        customer_unique_id,
-        recency_score,
-        frequency_score,
-        monetary_score,
-        ROUND((recency_score + frequency_score + monetary_score) / 3.0, 2) AS avg_rfm_score,
-		NTILE(4) OVER (ORDER BY ROUND((recency_score + frequency_score + monetary_score) / 3.0, 2) DESC) AS segment -- Segment into 4 groups
-    FROM RFMScores
-)
-SELECT 
-    customer_unique_id,
-    recency_score,
-    frequency_score,
-    monetary_score,
-    avg_rfm_score,
-	CASE 
-        WHEN segment = 1 THEN 'top loyalist'
-        WHEN segment = 2 THEN 'frequent shopper'
-        WHEN segment = 3 THEN 'regular member'
-        WHEN segment = 4 THEN 'customers at risk'
-	END AS segment_name
-FROM AverageRFM;
-
---RFM Analysis based on categorization
-WITH RFMTable AS (
-    SELECT
-        c.customer_unique_id,
-        CURRENT_DATE - MAX(o.order_purchase_timestamp) AS recency,
-        COUNT(op.payment_value) AS frequency,
-        SUM(op.payment_value) AS monetary
-    FROM customers c
-    JOIN orders o ON c.customer_id = o.customer_id
-    JOIN order_payments op ON o.order_id = op.order_id
-    WHERE o.order_status NOT IN ('canceled', 'unavailable')
-    GROUP BY c.customer_unique_id
-),
-RFMScores AS (
-    SELECT
-        customer_unique_id,
-        NTILE(5) OVER (ORDER BY recency DESC) AS recency_score,
+		NTILE(5) OVER (ORDER BY recency) AS recency_score,
         NTILE(5) OVER (ORDER BY frequency) AS frequency_score,
         NTILE(5) OVER (ORDER BY monetary) AS monetary_score
     FROM RFMTable
@@ -272,10 +242,10 @@ SELECT
     CONCAT(recency_score, frequency_score, monetary_score) AS rfm_score,
     CASE
         WHEN recency_score = 5 AND frequency_score >= 4 AND monetary_score >= 4 THEN 'Best Customers'
-        WHEN recency_score = 5 AND frequency_score <= 2 AND monetary_score >= 4 THEN 'Loyal Customers'
-        WHEN recency_score >= 3 AND frequency_score >= 3 AND monetary_score <= 2 THEN 'Potential Loyalists'
+        WHEN recency_score >= 4 AND frequency_score >= 3 AND monetary_score >= 3 THEN 'Loyal Customers'
+        WHEN recency_score <= 3 AND frequency_score >= 3 AND monetary_score >= 3 THEN 'Potential Loyalists'
         WHEN recency_score = 5 AND frequency_score <= 2 AND monetary_score <= 2 THEN 'New Customers'
         ELSE 'At Risk'
     END AS customer_segment
-FROM RFMScores
-ORDER BY customer_segment;
+FROM RFMScores;
+
