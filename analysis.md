@@ -181,6 +181,21 @@ AND c.customer_city IN (
 GROUP BY c.customer_city
 ORDER BY average_duration;
 ```
+Result:
+customer_city|average_duration
+---|---
+guarulhos|		7 days
+sao paulo|		7 days
+sao bernardo do campo|	7 days
+campinas|		9 days
+curitiba|		10 days
+belo horizonte|		10 days 
+brasilia|		12 days
+rio de janeiro|		14 days 
+porto alegre|		15 days 
+salvador|		18 days 
+
+In the top 10 cities with the highest number of transactions, delivery time ranges from 7 to 18 days.
 
 ### 3. Customer Lifetime Value (CLV) Analysis
 Customer Lifetime Value (CLV) is a critical metric that estimates the total revenue a business can expect from a single customer throughout their relationship with the company. CLV helps identify the most valuable customers by analyzing their purchasing behavior, including the frequency of purchases, the average order value, and the duration of the customer relationship.
